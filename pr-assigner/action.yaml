@@ -1,0 +1,58 @@
+name: "Pull Request Reviewer Assigner"
+description: "Automatically assigns reviewers and sends Slack notifications for PRs."
+
+inputs:
+  event-type:
+    description: "The type of the pull request event (e.g., opened, ready_for_review)."
+    required: true
+  pr-number:
+    description: "The number of the pull request."
+    required: true
+  removed-reviewer:
+    description: "The login of the reviewer that was removed (if applicable)."
+    required: false
+    default: ""
+  github-token:
+    description: "The GitHub token for making API calls."
+    required: true
+  slack-webhook:
+    description: "The Slack webhook URL for notifications."
+    required: false
+
+runs:
+  using: "composite"
+  steps:
+    # Clona el repositorio de la acción
+    - name: Checkout the action's repo to get user map
+      uses: actions/checkout@v4
+      with:
+        repository: konflux-ci/release-service-automations
+        ref: main
+        path: './.action-repo' # Clona el repo en esta subcarpeta
+        token: ${{ inputs.github-token }}
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '16'
+
+    - name: Install dependencies
+      # CAMBIO: Establece el directorio de trabajo en la carpeta del script clonado
+      working-directory: ./.action-repo/pr-assigner
+      shell: bash
+      run: npm install --legacy-peer-deps
+
+    - name: Run pr-assigner script
+      # CAMBIO: El directorio de trabajo es el mismo para ejecutar el script
+      working-directory: ./.action-repo/pr-assigner
+      shell: bash
+      env:
+        PR_NUMBER: ${{ inputs.pr-number }}
+        EVENT_TYPE: ${{ inputs.event-type }}
+        REMOVED_REVIEWER: ${{ inputs.removed-reviewer }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        SLACK_WEBHOOK: ${{ inputs.slack-webhook }}
+        # La ruta al archivo es ahora relativa al nuevo directorio de trabajo
+        USER_MAP_FILE_PATH: '../user-map.yaml'
+      run: node assign_reviewers.js
+
