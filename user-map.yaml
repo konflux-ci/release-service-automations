@@ -1,0 +1,37 @@
+users:
+  davidmogar:
+    slack_id: "damoreno"
+    notify: true
+    assign: true
+  FilipNikolovski:
+    slack_id: "fnikolov"
+    notify: false
+    assign: true
+  happybhati:
+    slack_id: "hbhati"
+    notify: false
+    assign: true
+  jinqi7:
+    slack_id: "jinqi"
+    notify: false
+    assign: true
+  johnbieren:
+    slack_id: "jbieren"
+    notify: false
+    assign: true
+  mmalina:
+    slack_id: "mmalina"
+    notify: false
+    assign: true
+  Paul123111:
+    slack_id: "pafitzge"
+    notify: false
+    assign: true
+  seanconroy2021:
+    slack_id: "sconroy"
+    notify: false
+    assign: true
+  theflockers:
+    slack_id: "lmendes"
+    notify: true
+    assign: true
