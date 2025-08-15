@@ -1,14 +1,14 @@
 # PR Assigner GitHub Action
 
-Automatically assigns reviewers to PRs and notifies them via Slack.
+Automatically assigns PRs to team members and notifies them via Slack.
 
 ## Inputs
 
 | Name              | Description                                         | Required |
 |-------------------|-----------------------------------------------------|----------|
-| `event-type`      | GitHub event action (`opened`, etc.)               | ✅       |
-| `pr-number`       | Number of the PR                                    | ✅       |
-| `removed-reviewer`| Login of removed reviewer (for `review_request_removed`) | ❌     |
+| `event-type`      | GitHub event action (`opened`, `unassigned`, etc.)   | ✅       |
+| `pr-number`       | Number of the PR                                     | ✅       |
+| `removed-assignee`| Login of removed assignee (for `unassigned` events)  | ❌       |
 
 ## Environment Variables
 
@@ -23,5 +23,11 @@ The file `user_map.yaml` in the repo root should define user mappings like:
 users:
   username:
     slack_id: U123456
-    notify: true
-    assign: true
+    notify: true   # Whether to send Slack notifications
+    assign: true   # Whether this user can be assigned to PRs
+```
+
+## How It Works
+* On PR creation (opened), the action randomly selects eligible assignees from the user_map.yaml file.
+* On assignee removal (unassigned), a new eligible assignee is selected and assigned.
+* Slack notifications are sent according to the notify setting in the user map.

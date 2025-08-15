@@ -3,18 +3,16 @@ const fetch = require("node-fetch");
 const yaml = require("yaml");
 const fs = require("fs").promises;
 
-// Se pasa la implementación de fetch al constructor de Octokit.
 const octokit = new Octokit({
     auth: process.env.GH_TOKEN,
-    request: {
-        fetch
-    }
+    request: { fetch }
 });
+
 const [owner, repo] = process.env.GITHUB_REPOSITORY.split("/");
 const prNumber = process.env.PR_NUMBER;
-const eventType = process.env.EVENT_TYPE;
+const eventType = process.env.EVENT_TYPE; // now expects "opened", "ready_for_review", "unassigned"
 const userMapFilePath = process.env.USER_MAP_FILE_PATH;
-const removedReviewer = process.env.REMOVED_REVIEWER;
+const removedAssignee = process.env.REMOVED_ASSIGNEE;
 
 async function getUserMap() {
     try {
@@ -34,21 +32,21 @@ async function getPRDetails() {
     return res.data;
 }
 
-async function assignReviewers(newReviewers, currentPR) {
-    const currentReviewers = currentPR.requested_reviewers.map(r => r.login);
-    const reviewersToActuallyAdd = newReviewers.filter(r => !currentReviewers.includes(r));
+async function assignPRsToUsers(newAssignees, currentPR) {
+    const currentAssignees = currentPR.assignees.map(a => a.login);
+    const assigneesToAdd = newAssignees.filter(a => !currentAssignees.includes(a));
 
-    if (reviewersToActuallyAdd.length > 0) {
+    if (assigneesToAdd.length > 0) {
         try {
-            await octokit.request("POST /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers", {
-                owner, repo, pull_number: prNumber,
-                reviewers: reviewersToActuallyAdd
+            await octokit.request("POST /repos/{owner}/{repo}/issues/{issue_number}/assignees", {
+                owner, repo, issue_number: prNumber,
+                assignees: assigneesToAdd
             });
         } catch (error) {
-            console.error("❌ Failed to assign reviewers:", error);
+            console.error("❌ Failed to assign PR to users:", error);
             process.exit(1);
         }
-        return reviewersToActuallyAdd;
+        return assigneesToAdd;
     }
     return [];
 }
@@ -66,7 +64,6 @@ async function notifySlack(text) {
         console.warn("⚠️ SLACK_WEBHOOK env var not set. Skipping Slack notification.");
         return;
     }
-
     try {
         await fetch(process.env.SLACK_WEBHOOK, {
             method: "POST",
@@ -94,40 +91,38 @@ async function notifySlack(text) {
     const userMap = await getUserMap();
 
     if (Object.keys(userMap).length === 0) {
-        console.warn("⚠️ User map is empty. No reviewers will be assigned.");
+        console.warn("⚠️ User map is empty. No assignees will be added.");
     }
 
     const allUsers = Object.entries(userMap)
         .filter(([_, v]) => v.assign !== false)
         .map(([k]) => k);
-    console.log("Eligible reviewers (assign != false):", allUsers);
+    console.log("Eligible assignees (assign != false):", allUsers);
 
     const author = pr.user.login;
-
     let candidates = allUsers.filter(u => u !== author);
-    const currentReviewers = pr.requested_reviewers.map(r => r.login);
+    const currentAssignees = pr.assignees.map(a => a.login);
 
-    if (eventType === "review_request_removed" && removedReviewer) {
-        console.log(`Excluding current removed reviewer from candidate pool for this run: ${removedReviewer}`);
-        candidates = candidates.filter(u => u !== removedReviewer);
+    if (eventType === "unassigned" && removedAssignee) {
+        console.log(`Excluding removed assignee from candidate pool for this run: ${removedAssignee}`);
+        candidates = candidates.filter(u => u !== removedAssignee);
     }
 
-    console.log("Available reviewers after filtering author/current reviewers:", candidates);
+    console.log("Available assignees after filtering author/current assignees:", candidates);
 
     const shouldAssign =
         (eventType === "opened" && !pr.draft) ||
         eventType === "ready_for_review" ||
-        eventType === "review_request_removed";
+        eventType === "unassigned";
 
     if (shouldAssign) {
-        const needed = 2 - currentReviewers.length;
+        const needed = 2 - currentAssignees.length;
 
         if (needed > 0) {
-            const available = candidates.filter(u => !currentReviewers.includes(u));
+            const available = candidates.filter(u => !currentAssignees.includes(u));
             console.log("Available users:", available);
 
             const toAdd = [];
-
             const pool = available.slice();
             while (toAdd.length < needed && pool.length > 0) {
                 const idx = Math.floor(Math.random() * pool.length);
@@ -136,30 +131,26 @@ async function notifySlack(text) {
 
             let msg = null;
             if (toAdd.length > 0) {
-                const addedReviewers = await assignReviewers(toAdd, pr);
-                if (addedReviewers.length > 0) {
-                    if (eventType === "review_request_removed" && toAdd.length === 1) {
-                        msg = `⚠️ Reviewer removed from PR #${prNumber} ${prLink} in \`${repo}\`. Added ${mention(addedReviewers, userMap)} to meet review requirements.`;
-                    } else if (eventType === "review_request_removed") {
-                        msg = `⚠️ Reviewer(s) removed from PR #${prNumber} ${prLink} in \`${repo}\`. Added ${mention(addedReviewers, userMap)} to meet review requirements.`;
+                const addedAssignees = await assignPRsToUsers(toAdd, pr);
+                if (addedAssignees.length > 0) {
+                    if (eventType === "unassigned" && toAdd.length === 1) {
+                        msg = `⚠️ Assignee removed from PR #${prNumber} ${prLink} in \`${repo}\`. Added ${mention(addedAssignees, userMap)} to meet assignment requirements.`;
+                    } else if (eventType === "unassigned") {
+                        msg = `⚠️ Assignees removed from PR #${prNumber} ${prLink} in \`${repo}\`. Added ${mention(addedAssignees, userMap)} to meet assignment requirements.`;
                     } else {
-                        msg = `🕵️ Reviewer update for PR #${prNumber} ${prLink} in \`${repo}\`: ${mention(addedReviewers, userMap)}.`;
+                        msg = `👥 Assignee update for PR #${prNumber} ${prLink} in \`${repo}\`: ${mention(addedAssignees, userMap)}.`;
                     }
                 }
             } else if (needed > 0 && available.length === 0) {
-                msg = `❗️ Reviewers needed for PR #${prNumber} ${prLink} in \`${repo}\` but no available candidates to assign.`;
+                msg = `❗️ Assignees needed for PR #${prNumber} ${prLink} in \`${repo}\` but no available candidates to assign.`;
             }
 
             if (msg) {
-                console.log(msg)
+                console.log(msg);
                 await notifySlack(msg);
             }
-        } else if (eventType === "review_request_removed" && currentReviewers.length >= 2) {
-            if (removedReviewer) {
-                console.log(`Reviewer(s) removed from PR #${prNumber}, but enough reviewers (${currentReviewers.length}) still remain. No new assignment needed.`);
-            } else {
-                console.log(`Reviewer(s) removed from PR #${prNumber}, but enough reviewers (${currentReviewers.length}) still remain. No new assignment needed.`);
-            }
+        } else if (eventType === "unassigned" && currentAssignees.length >= 2) {
+            console.log(`Assignee(s) removed from PR #${prNumber}, but enough assignees (${currentAssignees.length}) still remain. No new assignment needed.`);
         }
     }
 })();
