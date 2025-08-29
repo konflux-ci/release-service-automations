@@ -23,10 +23,6 @@ users:
     slack_id: "mmalina"
     notify: false
     assign: true
-  Paul123111:
-    slack_id: "pafitzge"
-    notify: false
-    assign: true
   seanconroy2021:
     slack_id: "sconroy"
     notify: false
