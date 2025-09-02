@@ -9,7 +9,7 @@ users:
     assign: true
   happybhati:
     slack_id: "hbhati"
-    notify: false
+    notify: true
     assign: true
   jinqi7:
     slack_id: "jinqi"
