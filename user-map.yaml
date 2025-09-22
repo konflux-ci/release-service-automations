@@ -3,6 +3,10 @@ users:
     slack_id: "damoreno"
     notify: true
     assign: true
+  elenagerman:
+    slack_id: "elgerman"
+    notify: false
+    assign: true
   FilipNikolovski:
     slack_id: "fnikolov"
     notify: false
