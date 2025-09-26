@@ -34,4 +34,4 @@ users:
   theflockers:
     slack_id: "lmendes"
     notify: true
-    assign: true
+    assign: false
