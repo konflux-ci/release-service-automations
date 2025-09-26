@@ -23,10 +23,10 @@ users:
     slack_id: "jbieren"
     notify: false
     assign: true
-  # mmalina:
-  #   slack_id: "mmalina"
-  #   notify: false
-  #   assign: true
+  mmalina:
+    slack_id: "mmalina"
+    notify: false
+    assign: true
   seanconroy2021:
     slack_id: "sconroy"
     notify: false
