@@ -1,0 +1,60 @@
+name: "JIRA CI"
+description: "Automatically promotes JIRA tickets from one stage to another in the release process"
+
+inputs:
+  jira_url:
+    description: The URL of the JIRA instance
+    required: false
+    default: https://issues.redhat.com
+  promotion_type:
+    description: The type of promotion development-to-staging or staging-to-production
+    required: true
+  metadata_file:
+    description: The file containing the metadata for the tickets in JSON format
+    required: true
+  dry_run:
+    description: Run the script in dry run mode "true" or "false"
+    required: false
+    default: "false"
+  jira_token:
+    description: The JIRA API token for authentication
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout the action's repo
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8  # v5
+      with:
+        repository: konflux-ci/release-service-automations
+        ref: main
+        path: ./action-repo
+        fetch-depth: 1
+        sparse-checkout: jira-ci
+
+    - name: Set up Python
+      uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c  # v6
+      with:
+        python-version: "3.13"
+        cache: pip
+        cache-dependency-path: ./action-repo/jira-ci/requirements.txt
+
+    - name: Install dependencies
+      shell: bash
+      working-directory: ./action-repo/jira-ci
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Running JIRA CI
+      shell: bash
+      working-directory: ./
+      env:
+        JIRA_TOKEN: ${{ inputs.jira_token }}
+      run: |
+        python ./action-repo/jira-ci/jira_ci.py \
+          --jira_url "${{ inputs.jira_url }}" \
+          --promotion_type "${{ inputs.promotion_type }}" \
+          --metadata_file "${{ inputs.metadata_file }}" \
+          --dry_run "${{ inputs.dry_run }}"
+
