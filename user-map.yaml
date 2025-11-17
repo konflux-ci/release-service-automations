@@ -2,7 +2,7 @@ users:
   davidmogar:
     slack_id: "damoreno"
     notify: true
-    assign: true
+    assign: false
   elenagerman:
     slack_id: "elgerman"
     notify: false
