@@ -22,7 +22,7 @@ users:
   johnbieren:
     slack_id: "jbieren"
     notify: false
-    assign: true
+    assign: false
   mmalina:
     slack_id: "mmalina"
     notify: false
