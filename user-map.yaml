@@ -31,6 +31,10 @@ users:
     slack_id: "sconroy"
     notify: false
     assign: true
+  swickersh:
+    slack_id: "swickers"
+    notify: true
+    assign: true
   theflockers:
     slack_id: "lmendes"
     notify: true
