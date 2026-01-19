@@ -1,0 +1,78 @@
+---
+name: Promote Controller
+on:
+  workflow_dispatch:
+    inputs:
+      promotion-type:
+        description: The type of promotion to perform
+        type: choice
+        required: true
+        default: development-to-staging
+        options:
+          - development-to-staging
+          - staging-to-production
+      release-service:
+        description: |
+          Create Release Service Infra PR: Create a PR to infra-deployments to promote the Release Service
+        type: boolean
+        required: true
+        default: false
+      internal-services:
+        description: |
+          Create Internal Services Infra PR: Create a PR to infra-deployments to promote the Internal Services
+        type: boolean
+        required: true
+        default: false
+jobs:
+  promote:
+    name: Promote
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955  # v4
+        with:
+          fetch-depth: 0  # Fetch full history for commit analysis
+      
+      - name: Create Controllers PRs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GIT_REF_INFRA_DEPLOYMENTS: ${{ vars.GIT_REF_INFRA_DEPLOYMENTS }}
+          GIT_REF_RELEASE_SERVICE: ${{ vars.GIT_REF_RELEASE_SERVICE }}
+          GIT_REF_INFRA_COMMON_DEPLOYMENTS: ${{ vars.GIT_REF_INFRA_COMMON_DEPLOYMENTS }}
+          GIT_REF_INTERNAL_SERVICES: ${{ vars.GIT_REF_INTERNAL_SERVICES }}
+        run: |
+          set -x
+          # Determine source and target overlays
+          if [ "${{ inputs.promotion-type }}" = "development-to-staging" ]; then
+            FROM_BRANCH="development"
+            TO_BRANCH="staging"
+          else
+            FROM_BRANCH="staging"
+            TO_BRANCH="production"
+          fi
+          PROMOTE_RELEASE_SERVICE=${{ inputs.release-service }}
+          PROMOTE_INTERNAL_SERVICES=${{ inputs.internal-services }}
+
+          if [ $PROMOTE_RELEASE_SERVICE == "true" ]; then
+            echo "Creating PR to promote the Release Service controller"
+            ./promote-controller/scripts/promote-controller.sh \
+              -s "$FROM_BRANCH" \
+              -t "$TO_BRANCH" \
+              -i "$GIT_REF_INFRA_DEPLOYMENTS" \
+              -r "$GIT_REF_RELEASE_SERVICE" \
+              -c release \
+              -o ${{github.actor}}
+          fi
+
+          if [ $PROMOTE_INTERNAL_SERVICES == "true" ]; then
+            echo "Creating PR to promote the Internal Services controller"
+            ./promote-controller/scripts/promote-controller.sh \
+              -s "$FROM_BRANCH" \
+              -t "$TO_BRANCH" \
+              -i "$GIT_REF_INFRA_COMMON_DEPLOYMENTS" \
+              -r "$GIT_REF_INTERNAL_SERVICES" \
+              -c internal-services \
+              -f FROM=components/internal-services/internal-"$FROM_BRANCH"/manager/manager-*.yaml,TO=components/internal-services/internal-"$TO_BRANCH"/manager/manager-*.yaml \
+              -j ".spec.template.spec.containers[0].image" \
+              -o "${{github.actor}}"
+          fi

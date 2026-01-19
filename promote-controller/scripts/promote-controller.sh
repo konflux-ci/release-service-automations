@@ -1,0 +1,387 @@
+#!/usr/bin/env bash
+set -e
+
+# Function to make a string JSON-safe
+make_json_safe() {
+  local json_safe_string
+  json_safe_string=$(jq -s -R -r @json <<< "$1")
+  echo "$json_safe_string"
+}
+
+print_help(){
+    echo -e "$0 --source-overlay SOURCE_OVERLAY --target-overlay TARGET_OVERLAY --fork-owner FORK_OWNER \
+            [ --skip-cleanup ]\n"
+    echo -e "\t-i|--infra-repo-url INFRA_REPO_URL\tURL of the infra repository to promote the changes"
+    echo -e "\t-s|--source-overlay SOURCE_OVERLAY\tName of the source overlay to promote to target"
+    echo -e "\t-t|--target-overlay TARGET_OVERLAY\tName of the overlay to target for promotion"
+    echo -e "\t-c|--component-name COMPONENT_NAME\tName of the component to be promoted"
+    echo -e "\t-r|--promote-repo-url PROMOTE_REPO_URL\tGit Repo URL of the component to be promoted"
+    echo -e "\t-o|--fork-owner FORK_OWNER\tName of the owner of your infra-deployments fork in Github"
+    echo -e "\t-f|--update-file-paths UPDATE_FILE_PATHS\tSource and destination files to read/update - FROM=<file path>,TO=<file path>"
+    echo -e "\t-j|--update-json-path UPDATE_JSON_PATH\tJSON path where update should be done"
+    echo -e "\t-k|--skip-cleanup\tDisable cleanup after test. Useful for debugging"
+}
+
+require_arg() {
+    local var_name="$1"
+    local var_value="$2"
+    local arg_name="$3"
+
+    if [ -z "$var_value" ]; then
+        echo -e "Error: missing '$arg_name' argument\n\n"
+        print_help
+        exit 1
+    fi
+}
+
+set_credentials() {
+    git config --global user.name $1
+    git config --global user.email $2
+}
+
+get_fork_info() {
+    REPO_URL=$1
+    echo "$REPO_URL" | awk '{
+      if(match($1, "^git")) {
+        repo=substr($1, index($1, ":") +1)
+        owner=substr(repo, 0, index(repo, "/") -1)
+        fork=substr(repo, index(repo, "/")+1)
+      } else {
+        repo=substr($1, index($1, ".com") +5)
+        owner=substr(repo, 0, index(repo, "/") -1)
+        fork=substr(repo, index(repo, "/")+1)
+      }
+      print owner" "fork
+    }'
+}
+
+get_source_file() {
+    echo $1 |awk -F\; '{
+        FROM=substr($0, index($0, "FROM="), index($0, ",") -1)
+	print substr(FROM, 6)
+    }'
+}
+
+get_destination_file() {
+    echo $1 |awk -F\; '{
+        TO=substr($0, index($0, "TO=") +3)
+	print TO
+    }'
+}
+
+OPTIONS=$(getopt -l "infra-repo-url:,source-overlay:,target-overlay:,fork-owner:,component-name:,promote-repo-url:,skip-cleanup,update-file-path:,update-json-paths:,help" \
+	         -o "i:s:t:c:r:o:kf:j:h" -a -- "$@")
+eval set -- "$OPTIONS"
+while true; do
+    case "$1" in
+        -k|--skip-cleanup)
+            CLEANUP="true"
+            shift
+            ;;
+        -s|--source-overlay)
+            SOURCE_OVERLAY="$2"
+            shift 2
+            ;;
+        -t|--target-overlay)
+            TARGET_OVERLAY="$2"
+            shift 2
+            ;;
+	      -c|--component-name)
+            COMPONENT_NAME="$2"
+            shift 2
+            ;;
+        -i|--infra-repo-url)
+            INFRA_REPO_URL="$2"
+            shift 2
+            ;;
+        -r|--promote-repo-url)
+            PROMOTE_REPO_URL="$2"
+            shift 2
+            ;;
+        -f|--update-file-paths)
+            UPDATE_FILE_PATHS="$2"
+            shift 2
+            ;;
+        -j|--update-json-path)
+            UPDATE_JSON_PATH="$2"
+            shift 2
+            ;;
+        -o|--fork-owner)
+            FORK_OWNER="$2"
+            shift 2
+            ;;
+        -h|--help)
+            print_help
+            exit
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *) echo "Error: Unexpected option: $1" >&2
+    esac
+done
+
+# The source and target overlays are only necessary if the update file path is not set
+if [ -n "$UPDATE_FILE_PATHS" ]; then
+    require_arg "UPDATE_JSON_PATH" "${UPDATE_JSON_PATH}" "update-json-path"
+else
+    require_arg "SOURCE_OVERLAY" "${SOURCE_OVERLAY}" "source-overlay"
+    require_arg "TARGET_OVERLAY" "${TARGET_OVERLAY}" "target-overlay"
+fi
+
+require_arg "INFRA_REPO_URL" "${INFRA_REPO_URL}" "infra-repo-url"
+require_arg "FORK_OWNER" "${FORK_OWNER}" "fork-owner"
+require_arg "GITHUB_TOKEN" "${GITHUB_TOKEN}" "GITHUB_TOKEN environment variable"
+require_arg "PROMOTE_REPO_URL" "${PROMOTE_REPO_URL}" "PROMOTE_REPO_URL promoting repository url"
+
+SOURCE_FILE=$(get_source_file $UPDATE_FILE_PATHS)
+DESTINATION_FILE=$(get_destination_file $UPDATE_FILE_PATHS)
+
+# Github infra-deployments repository details
+read -r INFRA_OWNER INFRA_REPO <<< $(get_fork_info "$INFRA_REPO_URL")
+
+# Personal access TOKEN with appropriate permissions
+TOKEN="${GITHUB_TOKEN}"
+
+# Parsing the repository into useful vars
+read -r PROMOTE_FORK_OWNER PROMOTE_FORK_NAME <<< $(get_fork_info "$PROMOTE_REPO_URL")
+
+# removing .git from PROMOTE_FORK_NAME
+PROMOTE_FORK_NAME=$(basename "$PROMOTE_FORK_NAME" .git)
+INFRA_REPO=$(basename "$INFRA_REPO" .git)
+
+# Branch and commit details
+NEW_BRANCH="${PROMOTE_FORK_NAME}-${TARGET_OVERLAY}-update-"$(date '+%Y_%m_%d__%H_%M_%S')
+COMMIT_MESSAGE="Promote ${PROMOTE_FORK_NAME} from ${SOURCE_OVERLAY} to ${TARGET_OVERLAY}"
+
+# Fork repository and branch parameters
+BASE_BRANCH="main"             # Change this to the base branch you want to create the PR against
+
+# PR DESCRIPTION
+DESCRIPTION="Included PRs:\r\n"
+
+# Clone the repository
+TMPDIR=$(mktemp -d)
+INFRA_DIR=${TMPDIR}/$INFRA_REPO
+PROMOTE_SERVICE_DIR=${TMPDIR}/$PROMOTE_FORK_NAME
+
+mkdir -p ${INFRA_DIR}
+mkdir -p ${PROMOTE_SERVICE_DIR}
+
+if [ "${CLEANUP}" != "true" ]; then
+  trap "rm -rf ${TMPDIR}" EXIT
+else
+  echo "Temporary git clone directory: ${TMPDIR}"
+fi
+
+if [ -n "${SOURCE_OVERLAY}" ] && [ -n "${TARGET_OVERLAY}" ]; then
+    echo -e "---\nPromoting ${COMPONENT_NAME} to ${TARGET_OVERLAY}"
+else
+    echo -e "---\nPromoting $PROMOTE_FORK_NAME ${SOURCE_OVERLAY} to ${TARGET_OVERLAY} in ${INFRA_OWNER}/${INFRA_REPO}\n---\n"
+fi
+cd ${TMPDIR}
+
+echo -e "Getting user email for cli setup:"
+FORK_OWNER_EMAIL=$(curl -L \
+  -H "Accept: application/vnd.github+json" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "X-GitHub-Api-Version: 2022-11-28" \
+  https://api.github.com/users/${FORK_OWNER} | jq .email)
+
+echo -e "Sync fork with upstream:"
+SYNC_FORK_JSON=$(curl -s -L \
+  -X POST \
+  -H "Accept: application/vnd.github+json" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "X-GitHub-Api-Version: 2022-11-28" \
+  https://api.github.com/repos/${FORK_OWNER}/${INFRA_REPO}/merge-upstream \
+  -d '{"branch":"'${BASE_BRANCH}'"}')
+
+
+# setting global git config user info
+set_credentials "${FORK_OWNER}" "${FORK_OWNER_EMAIL}"
+
+echo "$SYNC_FORK_JSON"
+
+INFRA_REPO_URL="https://${FORK_OWNER}:${TOKEN}@github.com/${INFRA_OWNER}/${INFRA_REPO}.git"
+PROMOTE_REPO_URL="https://${FORK_OWNER}:${TOKEN}@github.com/${PROMOTE_FORK_OWNER}/${PROMOTE_FORK_NAME}.git"
+
+# clone infra-deployments
+git clone "$INFRA_REPO_URL"
+git clone "$PROMOTE_REPO_URL"
+
+cd ${INFRA_DIR}
+git fetch --all --tags --prune
+
+# Create a new branch
+git reset --hard HEAD
+git checkout -b "$NEW_BRANCH" origin/"$BASE_BRANCH"
+
+if [ -n "$UPDATE_FILE_PATHS" ] && [ -n "$UPDATE_JSON_PATH" ]; then
+    READ_FILE=$SOURCE_FILE
+    # if the source file is unset or not found, it will check the differences with
+    # the latest version in the destination file
+
+    if ! stat "$SOURCE_FILE" || [ -z "$SOURCE_FILE" ]; then
+        READ_FILE=$DESTINATION_FILE
+    fi
+
+    for FILE in $(tr "," " " <<< "$READ_FILE"); do
+        IMAGE=$(yq "$UPDATE_JSON_PATH" $FILE)
+        SOURCE_IMAGE+=("$IMAGE")
+    done
+
+    SOURCE_IMAGE=$(printf "%s\n" ${SOURCE_IMAGE[*]} | sort | uniq)
+    RS_SOURCE_OVERLAY_COMMIT=$(echo "$SOURCE_IMAGE" |awk -F: '{print $2}')
+
+    if [ "$TARGET_OVERLAY" == "production" ]; then
+        for FILE in $(tr "," " " <<< $DESTINATION_FILE); do
+            IMAGE=$(yq "$UPDATE_JSON_PATH" $FILE)
+            TARGET_IMAGE_OVERLAY+=("$IMAGE")
+        done
+        TARGET_IMAGE_OVERLAY=$(printf "%s\n" ${TARGET_IMAGE_OVERLAY[*]} | sort | uniq)
+        RS_TARGET_OVERLAY_COMMIT=$(echo "$TARGET_IMAGE_OVERLAY" |awk -F: '{print $2}')
+	# replaces the image in the prod files with the one already in stage
+        TARGET_IMAGE=$(sed "s/$RS_TARGET_OVERLAY_COMMIT/$RS_SOURCE_OVERLAY_COMMIT/g" <<< "$SOURCE_IMAGE")
+    else
+	# replaces the image in staging with the latest
+        RS_TARGET_OVERLAY_COMMIT=$(cd $PROMOTE_SERVICE_DIR; git log -1 --format=%H)
+        TARGET_IMAGE=$(sed "s/$RS_SOURCE_OVERLAY_COMMIT/$RS_TARGET_OVERLAY_COMMIT/g" <<< "$SOURCE_IMAGE")
+    fi
+else
+    RS_SOURCE_OVERLAY_COMMIT=$(yq '.images[0].newTag' < components/${COMPONENT_NAME}/${SOURCE_OVERLAY}/kustomization.yaml)
+    RS_TARGET_OVERLAY_COMMIT=$(yq '.images[0].newTag' < components/${COMPONENT_NAME}/${TARGET_OVERLAY}/kustomization.yaml)
+fi
+
+echo ""
+echo "$PROMOTE_FORK_NAME"' source overlay commit -> '"$RS_SOURCE_OVERLAY_COMMIT"
+echo "$PROMOTE_FORK_NAME"' target overlay commit -> '"$RS_TARGET_OVERLAY_COMMIT"
+echo ""
+
+cd  ${PROMOTE_SERVICE_DIR}
+git fetch --all --tags --prune
+RS_COMMITS=($(git rev-list --first-parent --ancestry-path "$RS_TARGET_OVERLAY_COMMIT"'...'"$RS_SOURCE_OVERLAY_COMMIT"))
+
+echo "Fetching PR information for ${#RS_COMMITS[@]} commits..."
+
+graphql_request() {
+  local query="$1"
+  local retries=3
+  local response
+
+  for ((i=1; i<=retries; i++)); do
+    response=$(curl -sf -X POST https://api.github.com/graphql \
+      -H "Authorization: bearer ${TOKEN}" \
+      -H "Content-Type: application/json" \
+      -d "$(jq -n --arg q "$query" '{query: $q}')")
+
+    if [ $? -eq 0 ] && ! echo "$response" | jq -e '.errors' >/dev/null 2>&1; then
+      echo "$response"
+      return 0
+    fi
+
+    if [ $i -lt $retries ]; then
+      echo "Request failed. Retrying $i/$retries..." >&2
+      sleep 10
+    fi
+  done
+
+  echo "Error: GraphQL request failed after $retries attempts" >&2
+  return 1
+}
+
+# Process commits in batches of 50
+if [ ${#RS_COMMITS[@]} -eq 0 ]; then
+  echo "No commits to process"
+else
+  batch_size=50
+
+  for ((i=0; i<${#RS_COMMITS[@]}; i+=batch_size)); do
+    # Build GraphQL query for this batch
+    query="query {"
+    batch_end=$((i + batch_size))
+    [ $batch_end -gt ${#RS_COMMITS[@]} ] && batch_end=${#RS_COMMITS[@]}
+
+    for ((j=i; j<batch_end; j++)); do
+      query="$query
+      c$j: search(query: \"repo:${PROMOTE_FORK_OWNER}/${PROMOTE_FORK_NAME} is:pr sha:${RS_COMMITS[$j]}\", type: ISSUE, first: 1) {
+        edges {
+          node {
+            ... on PullRequest {
+              url
+              labels(first: 10) {
+                nodes {
+                  name
+                }
+              }
+            }
+          }
+        }
+      }"
+    done
+    query="$query
+    }"
+
+    response=$(graphql_request "$query")
+    if [ $? -ne 0 ]; then
+      echo "Error: Failed to fetch PR information"
+      exit 1
+    fi
+
+    for ((j=i; j<batch_end; j++)); do
+      pr_url=$(echo "$response" | jq -r ".data.c$j.edges[0]?.node.url // empty")
+
+      if [ -n "$pr_url" ]; then
+        breaking_change=$(echo "$response" | jq -r ".data.c$j.edges[0]?.node.labels.nodes[]?.name | select(contains(\"breaking-change\")) // empty")
+
+        label=""
+        [[ -z "$breaking_change" ]] || label="(breaking-change)"
+
+        DESCRIPTION="$DESCRIPTION"' - '"$pr_url $label"'\r\n'
+      fi
+    done
+  done
+
+  echo "Successfully processed ${#RS_COMMITS[@]} commits"
+fi
+
+# Updating the files in the $INFRA_DIR
+cd ${INFRA_DIR}
+
+if [ -n "$UPDATE_FILE_PATHS" ] && [ -n "$UPDATE_JSON_PATH" ]; then
+    COMMIT_MESSAGE="Promote ${PROMOTE_FORK_NAME} from ${SOURCE_OVERLAY} to ${TARGET_OVERLAY}"
+    echo $DESCRIPTION
+    for FILE in $(tr "," " " <<< $DESTINATION_FILE); do
+        yq -i "${UPDATE_JSON_PATH}=\"${TARGET_IMAGE}\"" $FILE
+        git add $FILE
+    done
+else
+    sed -i "s/$RS_TARGET_OVERLAY_COMMIT/$RS_SOURCE_OVERLAY_COMMIT/g" components/${COMPONENT_NAME}/${TARGET_OVERLAY}/kustomization.yaml
+    git add components/${COMPONENT_NAME}/${TARGET_OVERLAY}/kustomization.yaml
+fi
+
+git commit -m "$COMMIT_MESSAGE"
+git push origin "$NEW_BRANCH"
+
+# Create a pull request using GitHub API
+pr_creation_json=$(curl -s -X POST "https://api.github.com/repos/$INFRA_OWNER/$INFRA_REPO/pulls" \
+  -H "Authorization: TOKEN $TOKEN" \
+  -d '{
+    "title": "'"$COMMIT_MESSAGE"'",
+    "head": "'"$FORK_OWNER:$NEW_BRANCH"'",
+    "base": "'"$BASE_BRANCH"'",
+    "body": "'"$DESCRIPTION"'"
+  }')
+
+pr_url=$(echo "$pr_creation_json" | jq -r .html_url)
+
+if [ "${pr_url}" == "null" ]; then
+  echo -e "\nError: failed to create PR. See output: \n${pr_creation_json}"
+  exit 1
+fi
+
+
+echo -e "\n=================================="
+echo -e "Pull request created successfully:\n- ${pr_url}"
+echo "=================================="
