@@ -223,7 +223,7 @@ if [ -n "$UPDATE_FILE_PATHS" ] && [ -n "$UPDATE_JSON_PATH" ]; then
     # if the source file is unset or not found, it will check the differences with
     # the latest version in the destination file
 
-    if ! stat "$SOURCE_FILE" || [ -z "$SOURCE_FILE" ]; then
+    if ! stat $SOURCE_FILE || [ -z "$SOURCE_FILE" ]; then
         READ_FILE=$DESTINATION_FILE
     fi
 
