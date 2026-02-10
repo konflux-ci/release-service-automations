@@ -28,11 +28,20 @@ async function getIssueLabels() {
   return (data.labels || []).map((l) => l.name);
 }
 
+const AI_LABELS = ["ai-assisted", "ai-generated"];
+
 async function addLabels(labels) {
   if (labels.length === 0) return;
   await octokit.request(
     "POST /repos/{owner}/{repo}/issues/{issue_number}/labels",
     { owner, repo, issue_number: prNumber, data: { labels } }
+  );
+}
+
+async function removeLabel(label) {
+  await octokit.request(
+    "DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels/{name}",
+    { owner, repo, issue_number: prNumber, name: label }
   );
 }
 
@@ -58,11 +67,6 @@ async function addLabels(labels) {
   if (needAiAssisted) labelsToAdd.push("ai-assisted");
   if (needAiGenerated) labelsToAdd.push("ai-generated");
 
-  if (labelsToAdd.length === 0) {
-    console.log("No Assisted-By or Generated-By found in PR commits. Skipping labels.");
-    return;
-  }
-
   let currentLabels;
   try {
     currentLabels = await getIssueLabels();
@@ -71,9 +75,42 @@ async function addLabels(labels) {
     process.exit(1);
   }
 
+  if (labelsToAdd.length === 0) {
+    const toRemove = AI_LABELS.filter((l) => currentLabels.includes(l));
+    if (toRemove.length === 0) {
+      console.log("No Assisted-By or Generated-By found in PR commits. No AI labels to remove.");
+      return;
+    }
+    try {
+      for (const label of toRemove) {
+        await removeLabel(label);
+      }
+      console.log("Removed labels (no trailers in commits):", toRemove.join(", "));
+    } catch (err) {
+      console.error("Failed to remove labels:", err);
+      process.exit(1);
+    }
+    return;
+  }
+
   const missing = labelsToAdd.filter((l) => !currentLabels.includes(l));
   if (missing.length === 0) {
-    console.log("Labels already present:", labelsToAdd.join(", "));
+    const toRemove = AI_LABELS.filter(
+      (l) => currentLabels.includes(l) && !labelsToAdd.includes(l)
+    );
+    if (toRemove.length === 0) {
+      console.log("Labels already correct:", labelsToAdd.join(", "));
+      return;
+    }
+    try {
+      for (const label of toRemove) {
+        await removeLabel(label);
+      }
+      console.log("Removed labels:", toRemove.join(", "));
+    } catch (err) {
+      console.error("Failed to remove labels:", err);
+      process.exit(1);
+    }
     return;
   }
 
