@@ -1,0 +1,43 @@
+name: "PR AI Labeler"
+description: "Adds ai-assisted or ai-generated labels to PRs when commit messages contain Assisted-By or Generated-By trailers."
+
+inputs:
+  pr-number:
+    description: "The number of the pull request."
+    required: true
+  github-token:
+    description: "The GitHub token for making API calls."
+    required: true
+  repository:
+    description: "The repository (owner/repo) containing the PR."
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout the action's repo
+      uses: actions/checkout@v4
+      with:
+        repository: konflux-ci/release-service-automations
+        ref: main
+        path: './.action-repo'
+        token: ${{ inputs.github-token }}
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install dependencies
+      working-directory: ./.action-repo/pr-ai-labeler
+      shell: bash
+      run: npm install
+
+    - name: Run PR AI labeler script
+      working-directory: ./.action-repo/pr-ai-labeler
+      shell: bash
+      env:
+        PR_NUMBER: ${{ inputs.pr-number }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        GITHUB_REPOSITORY: ${{ inputs.repository }}
+      run: node label_ai_pr.js
