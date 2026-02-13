@@ -1,7 +1,9 @@
 const { Octokit } = require("@octokit/core");
+const { retry } = require("@octokit/plugin-retry");
 const fetch = require("node-fetch");
 
-const octokit = new Octokit({
+const OctokitWithRetry = Octokit.plugin(retry);
+const octokit = new OctokitWithRetry({
   auth: process.env.GH_TOKEN,
   request: { fetch },
 });
@@ -12,37 +14,80 @@ const prNumber = process.env.PR_NUMBER;
 const ASSISTED_BY_RE = /assisted-by\s*:/i;
 const GENERATED_BY_RE = /generated-by\s*:/i;
 
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 2000;
+
+function isRetryableError(err) {
+  if (!err) return false;
+  const msg = String(err.message || "");
+  if (msg.includes("ECONNREFUSED") || msg.includes("ETIMEDOUT") || msg.includes("ECONNRESET")) return true;
+  const status = err.status != null ? err.status : (err.response && err.response.status) != null ? err.response.status : err.code;
+  if (typeof status === "number" && status >= 500) return true;
+  return false;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function withRetry(fn, label) {
+  let lastErr;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (attempt < MAX_RETRIES && isRetryableError(err)) {
+        const delay = RETRY_DELAY_MS * Math.pow(2, attempt - 1);
+        console.warn(`${label} failed (attempt ${attempt}/${MAX_RETRIES}), retrying in ${delay}ms:`, err.message || err);
+        await sleep(delay);
+      } else {
+        throw err;
+      }
+    }
+  }
+  throw lastErr;
+}
+
 async function getPRCommits() {
-  const { data } = await octokit.request(
-    "GET /repos/{owner}/{repo}/pulls/{pull_number}/commits",
-    { owner, repo, pull_number: prNumber }
-  );
-  return data;
+  return withRetry(async () => {
+    const { data } = await octokit.request(
+      "GET /repos/{owner}/{repo}/pulls/{pull_number}/commits",
+      { owner, repo, pull_number: prNumber }
+    );
+    return data;
+  }, "getPRCommits");
 }
 
 async function getIssueLabels() {
-  const { data } = await octokit.request(
-    "GET /repos/{owner}/{repo}/issues/{issue_number}",
-    { owner, repo, issue_number: prNumber }
-  );
-  return (data.labels || []).map((l) => l.name);
+  return withRetry(async () => {
+    const { data } = await octokit.request(
+      "GET /repos/{owner}/{repo}/issues/{issue_number}",
+      { owner, repo, issue_number: prNumber }
+    );
+    return (data.labels || []).map((l) => l.name);
+  }, "getIssueLabels");
 }
 
 const AI_LABELS = ["ai-assisted", "ai-generated"];
 
 async function addLabels(labels) {
   if (labels.length === 0) return;
-  await octokit.request(
-    "POST /repos/{owner}/{repo}/issues/{issue_number}/labels",
-    { owner, repo, issue_number: prNumber, data: { labels } }
-  );
+  return withRetry(async () => {
+    await octokit.request(
+      "POST /repos/{owner}/{repo}/issues/{issue_number}/labels",
+      { owner, repo, issue_number: prNumber, data: { labels } }
+    );
+  }, "addLabels");
 }
 
 async function removeLabel(label) {
-  await octokit.request(
-    "DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels/{name}",
-    { owner, repo, issue_number: prNumber, name: label }
-  );
+  return withRetry(async () => {
+    await octokit.request(
+      "DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels/{name}",
+      { owner, repo, issue_number: prNumber, name: label }
+    );
+  }, "removeLabel");
 }
 
 (async () => {

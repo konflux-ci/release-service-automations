@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "dependencies": {
     "@octokit/core": "^5.2.2",
+    "@octokit/plugin-retry": "^4.0.0",
     "node-fetch": "^2.6.11"
   }
 }
