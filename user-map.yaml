@@ -34,7 +34,7 @@ users:
   querti:
     slack_id: "lgallovi"
     notify: false
-    assign: false
+    assign: true
   seanconroy2021:
     slack_id: "sconroy"
     notify: false
