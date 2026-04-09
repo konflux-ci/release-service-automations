@@ -18,7 +18,7 @@ users:
   jinqi7:
     slack_id: "jinqi"
     notify: false
-    assign: true
+    assign: false
   johnbieren:
     slack_id: "jbieren"
     notify: false
