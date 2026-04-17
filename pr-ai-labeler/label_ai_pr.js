@@ -13,6 +13,7 @@ const prNumber = process.env.PR_NUMBER;
 
 const ASSISTED_BY_RE = /assisted-by\s*:/i;
 const GENERATED_BY_RE = /generated-by\s*:/i;
+const MADE_BY_RE = /made-by\s*:/i;
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 2000;
@@ -106,11 +107,13 @@ async function removeLabel(label) {
     const msg = (c.commit && c.commit.message) || "";
     if (ASSISTED_BY_RE.test(msg)) needAiAssisted = true;
     if (GENERATED_BY_RE.test(msg)) needAiGenerated = true;
+    if (MADE_BY_RE.test(msg)) needMadeBy = true;
   }
 
   const labelsToAdd = [];
   if (needAiAssisted) labelsToAdd.push("ai-assisted");
   if (needAiGenerated) labelsToAdd.push("ai-generated");
+  if (needMadeBy) labelsToAdd.push("made-by-ai");
 
   let currentLabels;
   try {
@@ -123,7 +126,7 @@ async function removeLabel(label) {
   if (labelsToAdd.length === 0) {
     const toRemove = AI_LABELS.filter((l) => currentLabels.includes(l));
     if (toRemove.length === 0) {
-      console.log("No Assisted-By or Generated-By found in PR commits. No AI labels to remove.");
+      console.log("No Assisted-By or Generated-By or Made-By found in PR commits. No AI labels to remove.");
       return;
     }
     try {
