@@ -205,6 +205,7 @@ set_credentials "${FORK_OWNER}" "${FORK_OWNER_EMAIL}"
 echo "$SYNC_FORK_JSON"
 
 INFRA_REPO_URL="https://${FORK_OWNER}:${TOKEN}@github.com/${INFRA_OWNER}/${INFRA_REPO}.git"
+INFRA_FORK_URL="https://${FORK_OWNER}:${TOKEN}@github.com/${FORK_OWNER}/${INFRA_REPO}.git"
 PROMOTE_REPO_URL="https://${FORK_OWNER}:${TOKEN}@github.com/${PROMOTE_FORK_OWNER}/${PROMOTE_FORK_NAME}.git"
 
 # clone infra-deployments
@@ -212,6 +213,7 @@ git clone "$INFRA_REPO_URL"
 git clone "$PROMOTE_REPO_URL"
 
 cd ${INFRA_DIR}
+git remote add fork "$INFRA_FORK_URL"
 git fetch --all --tags --prune
 
 # Create a new branch
@@ -362,7 +364,7 @@ else
 fi
 
 git commit -m "$COMMIT_MESSAGE"
-git push origin "$NEW_BRANCH"
+git push fork "$NEW_BRANCH"
 
 # Create a pull request using GitHub API
 pr_creation_json=$(curl -s -X POST "https://api.github.com/repos/$INFRA_OWNER/$INFRA_REPO/pulls" \
