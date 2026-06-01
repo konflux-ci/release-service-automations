@@ -4,6 +4,6 @@
   "dependencies": {
     "@octokit/core": "^5.2.2",
     "node-fetch": "^2.6.11",
-    "yaml": "^2.3.5"
+    "yaml": "^2.8.3"
   }
 }
