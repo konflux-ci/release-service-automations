@@ -1,0 +1,12 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "base: rebaseWhen, tekton schedule and GitHub Actions",
+  "rebaseWhen": "behind-base-branch",
+  "tekton": {
+    "schedule": ["* 0-4 * * *"]
+  },
+  "github-actions": {
+    "enabled": true,
+    "pinDigests": true
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "release-service-utils: base, lock file maintenance and pep621 pinning",
+  "extends": ["github>konflux-ci/release-service-automations//mintMaker/default"],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 5am on monday"]
+  },
+  "packageRules": [
+    {
+      "description": "Disable updates of pinned dependencies",
+      "matchManagers": ["pep621"],
+      "rangeStrategy": "in-range-only"
+    }
+  ]
+}
