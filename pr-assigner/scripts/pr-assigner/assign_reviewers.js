@@ -1,6 +1,7 @@
 const { Octokit } = require("@octokit/core");
 const fetch = require("node-fetch");
 const yaml = require("yaml");
+const { getUsersOnPTO } = require("./pto-check");
 
 const octokit = new Octokit({ auth: process.env.GH_TOKEN });
 const [owner, repo] = process.env.GITHUB_REPOSITORY.split("/");
@@ -8,6 +9,7 @@ const prNumber = process.env.PR_NUMBER;
 const eventType = process.env.EVENT_TYPE;
 const userMapURL = process.env.USER_MAP_URL;
 const removedReviewer = process.env.REMOVED_REVIEWER;
+const ptoCalendarUrl = process.env.PTO_CALENDAR_URL || "";
 
 async function getUserMap() {
     try {
@@ -73,6 +75,13 @@ async function notifySlack(text) {
     const author = pr.user.login;
 
     let candidates = allUsers.filter(u => u !== author);
+
+    const ptoUsers = await getUsersOnPTO(ptoCalendarUrl, userMap);
+    if (ptoUsers.size > 0) {
+        console.log("Users on PTO today:", [...ptoUsers]);
+        candidates = candidates.filter(u => !ptoUsers.has(u));
+    }
+
     const currentReviewers = pr.requested_reviewers.map(r => r.login);
 
     if (eventType === "review_request_removed" && removedReviewer) {

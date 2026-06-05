@@ -2,6 +2,7 @@ const { Octokit } = require("@octokit/core");
 const fetch = require("node-fetch");
 const yaml = require("yaml");
 const fs = require("fs").promises;
+const { getUsersOnPTO } = require("./pto-check");
 
 const octokit = new Octokit({
     auth: process.env.GH_TOKEN,
@@ -13,6 +14,7 @@ const prNumber = process.env.PR_NUMBER;
 const eventType = process.env.EVENT_TYPE; // now expects "opened", "ready_for_review", "unassigned"
 const userMapFilePath = process.env.USER_MAP_FILE_PATH;
 const removedAssignee = process.env.REMOVED_ASSIGNEE;
+const ptoCalendarUrl = process.env.PTO_CALENDAR_URL || "";
 
 async function getUserMap() {
     try {
@@ -101,6 +103,13 @@ async function notifySlack(text) {
 
     const author = pr.user.login;
     let candidates = allUsers.filter(u => u !== author);
+
+    const ptoUsers = await getUsersOnPTO(ptoCalendarUrl, userMap);
+    if (ptoUsers.size > 0) {
+        console.log("Users on PTO today:", [...ptoUsers]);
+        candidates = candidates.filter(u => !ptoUsers.has(u));
+    }
+
     const currentAssignees = pr.assignees.map(a => a.login);
 
     if (eventType === "unassigned" && removedAssignee) {

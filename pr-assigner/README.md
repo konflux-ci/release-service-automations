@@ -9,6 +9,7 @@ Automatically assigns PRs to team members and notifies them via Slack.
 | `event-type`      | GitHub event action (`opened`, `unassigned`, etc.)   | ✅       |
 | `pr-number`       | Number of the PR                                     | ✅       |
 | `removed-assignee`| Login of removed assignee (for `unassigned` events)  | ❌       |
+| `pto-calendar-url`| Google Calendar iCal URL for PTO/holiday detection   | ❌       |
 
 ## Environment Variables
 
@@ -26,6 +27,12 @@ users:
     notify: true   # Whether to send Slack notifications
     assign: true   # Whether this user can be assigned to PRs
 ```
+
+## PTO/Holiday Filtering
+
+To skip assigning users who are on PTO, provide a Google Calendar iCal URL via the `pto-calendar-url` input. To get the URL, go to your Google Calendar settings and use the **Shareable link to your calendar**. Store it as a repository secret.
+
+Calendar events must be **full-day** and titled `{slack_id} - PTO`, `{slack_id} - Holiday`, or `{slack_id} - OOO` (case-insensitive).
 
 ## How It Works
 * On PR creation (opened), the action randomly selects eligible assignees from the user_map.yaml file.

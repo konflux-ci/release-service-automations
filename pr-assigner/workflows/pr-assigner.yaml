@@ -41,3 +41,4 @@ jobs:
           REMOVED_REVIEWER: ${{ github.event.requested_reviewer.login }}
           SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
           USER_MAP_URL: https://gist.githubusercontent.com/davidmogar/cbe426b9ca93aefe727d822e24e13e0d/raw/user_map.yaml
+          PTO_CALENDAR_URL: ${{ secrets.PTO_CALENDAR_URL }}

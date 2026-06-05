@@ -18,6 +18,10 @@ inputs:
   slack-webhook:
     description: "The Slack webhook URL for notifications."
     required: false
+  pto-calendar-url:
+    description: "Public Google Calendar iCal URL for PTO/holiday detection. If empty, PTO filtering is skipped."
+    required: false
+    default: ""
 
 runs:
   using: "composite"
@@ -25,8 +29,8 @@ runs:
     - name: Checkout the action's repo to get user map
       uses: actions/checkout@v4
       with:
-        repository: konflux-ci/release-service-automations
-        ref: main
+        repository: seanconroy2021/release-service-automations
+        ref: auto-pr
         path: './.action-repo'
         token: ${{ inputs.github-token }}
 
@@ -50,4 +54,5 @@ runs:
         GH_TOKEN: ${{ inputs.github-token }}
         SLACK_WEBHOOK: ${{ inputs.slack-webhook }}
         USER_MAP_FILE_PATH: '../user-map.yaml'
+        PTO_CALENDAR_URL: ${{ inputs.pto-calendar-url }}
       run: node assign_assignees.js
