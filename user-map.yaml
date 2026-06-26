@@ -30,7 +30,7 @@ users:
   mmalina:
     slack_id: "mmalina"
     notify: false
-    assign: true
+    assign: false
   querti:
     slack_id: "lgallovi"
     notify: false
