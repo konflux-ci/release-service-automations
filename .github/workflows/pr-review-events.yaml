@@ -1,0 +1,23 @@
+---
+# Review events on PRs from forks receive a read-only GITHUB_TOKEN, so this
+# workflow cannot add or remove labels, even when the reviewer has write access.
+# Its completion triggers pr-prod-approval-labeler.yaml via workflow_run. That separate run
+# uses trusted default-branch code and explicitly grants pull-requests: write
+# to update labels after checking the current reviews through the GitHub API.
+name: PR Review Events
+# The labeler parses this run-name to identify the PR; keep its format in sync.
+run-name: 'Review labels for PR #${{ github.event.pull_request.number }}'
+
+on:
+  pull_request_review:
+    types: [submitted, dismissed]
+
+permissions: {}
+
+jobs:
+  review-event:
+    runs-on: ubuntu-latest
+    steps:
+      # This job only needs to complete to trigger the labeler; it sends no notification.
+      - name: Receive review event
+        run: echo 'Review received; the label updater will check current approvals.'

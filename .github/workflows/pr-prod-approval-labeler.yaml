@@ -1,0 +1,41 @@
+---
+name: PR Prod Approval Labeler
+
+on:
+  workflow_run:
+    workflows: [PR Review Events]
+    types: [completed]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  label-reviewed-pr:
+    if: github.event.workflow_run.event == 'pull_request_review'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: pr-prod-approval-label-${{ github.event.workflow_run.display_title }}
+      cancel-in-progress: false
+    steps:
+      - name: Identify reviewed PR
+        id: review
+        shell: bash
+        env:
+          REVIEW_RUN_TITLE: ${{ github.event.workflow_run.display_title }}
+        run: |
+          # Fork runs may have no pull_requests entry. The title selects the PR only;
+          # the action reads approval and permission information directly from GitHub.
+          if [[ ! "$REVIEW_RUN_TITLE" =~ ^Review\ labels\ for\ PR\ \#([1-9][0-9]*)$ ]]; then
+            echo 'Unexpected review run title' >&2
+            exit 1
+          fi
+          echo "pr-number=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+      # workflow_run checks out trusted default-branch code, never the PR's code.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v6
+      - name: Label PR from current approvals
+        uses: ./pr-prod-approval-labeler
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          pr-number: ${{ steps.review.outputs.pr-number }}
+          repository: ${{ github.repository }}

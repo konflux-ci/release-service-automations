@@ -1,0 +1,25 @@
+name: "PR Prod Approval Labeler"
+description: "Synchronizes prod/needs-approval with current approvals from repository writers."
+
+inputs:
+  pr-number:
+    description: "The number of the pull request."
+    required: true
+  github-token:
+    description: "The GitHub token for making API calls."
+    required: true
+  repository:
+    description: "The repository (owner/repo) containing the PR."
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Synchronize approval label
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        GH_REPO: ${{ inputs.repository }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+      run: python3 "$ACTION_PATH/label_prod_approval.py"
