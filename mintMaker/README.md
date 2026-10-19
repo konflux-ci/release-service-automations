@@ -5,11 +5,11 @@ used by [MintMaker](https://github.com/konflux-ci/mintmaker).
 
 ## Presets
 
-| Preset  | File           | What it adds                                                         |
-|---------|----------------|----------------------------------------------------------------------|
-| default | `default.json` | `rebaseWhen`, tekton schedule and GitHub Actions with `pinDigests`   |
-| utils   | `utils.json`   | Extends default, weekly lock file maintenance and pep621 pinned deps |
-| catalog | `catalog.json` | Extends default, custom tekton paths and image filtering             |
+| Preset  | File           | What it adds                                                                                            |
+|---------|----------------|-----------------------------------------------------------------------------------------------------------|
+| default | `default.json` | `rebaseWhen`, tekton schedule, GitHub Actions with `pinDigests`, and automerge for minor/patch updates |
+| utils   | `utils.json`   | Extends default, weekly lock file maintenance and pep621 pinned deps                                      |
+| catalog | `catalog.json` | Extends default, custom tekton paths and image filtering                                                  |
 
 ## Usage
 
