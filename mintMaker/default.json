@@ -1,7 +1,14 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "base: rebaseWhen, tekton schedule and GitHub Actions",
+  "description": "base: rebaseWhen, tekton schedule, GitHub Actions and automerge",
   "rebaseWhen": "behind-base-branch",
+  "packageRules": [
+    {
+      "description": "Automerge minor and patch updates for package versions",
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true
+    }
+  ],
   "tekton": {
     "schedule": ["* 0-4 * * *"]
   },
