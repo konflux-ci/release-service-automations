@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import io
 import json
 import subprocess
@@ -27,6 +28,162 @@ def review(
 
 
 class ReviewLabelTests(unittest.TestCase):
+    def test_pattern_matching(self) -> None:
+        cases = [
+            ("/src/", "src/nested/main.py", True),
+            ("/src/", "other/src/main.py", False),
+            ("apps/", "nested/apps/main.py", True),
+            ("docs/*", "docs/main.md", True),
+            ("docs/*", "docs/nested/main.md", False),
+            ("*.py", "nested/main.py", True),
+            ("/config.yaml", "nested/config.yaml", False),
+            ("**/config.yaml", "config.yaml", True),
+            ("**/config.yaml", "nested/deeper/config.yaml", True),
+            ("a/**/b", "a/b", True),
+            ("a/**/b", "a/x/y/b", True),
+            ("a/**/b", "nested/a/b", False),
+            ("a/**", "a/x/y/b", True),
+            ("a**b", "axb", True),
+            ("a**b", "a/x/b", False),
+            ("/file?.py", "file1.py", True),
+            ("/file?.py", "file12.py", False),
+            ("/a+b.txt", "a+b.txt", True),
+            ("/a+b.txt", "abxtxt", False),
+            ("/apps/github", "apps/github/main.py", True),
+            ("/apps/github", "apps/github-other/main.py", False),
+        ]
+        for pattern, path, expected in cases:
+            with self.subTest(pattern=pattern, path=path):
+                self.assertEqual(
+                    bool(labeler.compile_codeowners_pattern(pattern).search(path)), expected
+                )
+
+    def test_root_codeowners_matching(self) -> None:
+        contents = {
+            "type": "file", "encoding": "base64",
+            "content": base64.b64encode(b"""# Production paths
+/src/ @writer
+docs/* @writer
+**/config?.yaml @writer
+/src/examples/
+/src/examples/owned.py @writer
+/apps/ @writer
+/apps/github
+/hash/a#b @writer
+/space\\ dir/ @writer
+![invalid @writer
+*.md # @not-an-owner
+""").decode(),
+        }
+        with patch.object(labeler, "github_api", return_value=contents) as api:
+            owners = labeler.load_codeowners("repos/example/repo", "base-sha")
+            api.assert_called_once_with(
+                "repos/example/repo/contents/CODEOWNERS?ref=base-sha",
+                allow_not_found=True,
+            )
+        for path, expected in [
+            ("src/main.py", True), ("src/nested/main.py", True),
+            ("other/src/main.py", False), ("src2/main.py", False),
+            ("SRC/main.py", False), ("src/examples/demo.py", False),
+            ("src/examples/owned.py", True),
+            ("docs/readme.txt", True), ("docs/nested/readme.txt", False),
+            ("config1.yaml", True), ("nested/config2.yaml", True),
+            ("config12.yaml", False), ("apps/service/main.py", True),
+            ("apps/github/main.py", False), ("space dir/main.py", True),
+            ("README.md", False),
+            ("hash/a#b", True), ("hash/a", False),
+        ]:
+            with self.subTest(path=path):
+                self.assertEqual(labeler.has_codeowner(path, owners), expected)
+
+    def test_missing_root_codeowners_uses_existing_label_behavior(self) -> None:
+        for state, labels, expected in (
+            ("APPROVED", [], "POST"),
+            ("DISMISSED", [{"name": labeler.LABEL}], "DELETE"),
+        ):
+            pull_request = {"state": "open", "base": {"sha": "trusted-base"},
+                            "labels": labels}
+            responses = [pull_request, None, [[review(1, state)]]]
+            if state == "APPROVED":
+                responses.append({"permission": "write"})
+            responses.append(None)
+            with self.subTest(state=state), patch.object(
+                labeler, "github_api", side_effect=responses
+            ) as api:
+                labeler.synchronize_label("example/repo", "42")
+                self.assertEqual(api.call_args.kwargs["method"], expected)
+                contents_calls = [c for c in api.call_args_list if "/contents/" in c.args[0]]
+                self.assertEqual(contents_calls, [call(
+                    "repos/example/repo/contents/CODEOWNERS?ref=trusted-base",
+                    allow_not_found=True,
+                )])
+                self.assertFalse(any("/files?" in c.args[0] for c in api.call_args_list))
+
+    def test_changed_files_gate(self) -> None:
+        cases = [
+            ([{"filename": "README.md"}], False),
+            ([{"filename": "src/main.py", "status": "modified"}], True),
+            ([{"filename": "src/old.py", "status": "removed"}], True),
+            ([{"filename": "docs/moved.py", "previous_filename": "src/main.py"}], True),
+            ([{"filename": "src/main.py", "previous_filename": "docs/moved.py"}], True),
+            ([{"filename": "README.md"}, {"filename": "src/main.py"}], True),
+        ]
+        for files, expected in cases:
+            pull_request = {"base": {"sha": "trusted-base"}, "changed_files": len(files)}
+            contents = {"type": "file", "encoding": "base64",
+                        "content": base64.b64encode(b"/src/ @writer").decode()}
+            with self.subTest(files=files), patch.object(
+                labeler, "github_api", side_effect=[contents, [[file] for file in files]]
+            ) as api:
+                self.assertEqual(labeler.requires_prod_approval(
+                    "repos/example/repo", "42", pull_request
+                ), expected)
+                api.assert_has_calls([
+                    call("repos/example/repo/contents/CODEOWNERS?ref=trusted-base",
+                         allow_not_found=True),
+                    call("repos/example/repo/pulls/42/files?per_page=100", paginate=True),
+                ])
+
+    def test_nonmatching_pr_leaves_labels_and_reviews_untouched(self) -> None:
+        for labels in ([], [{"name": labeler.LABEL}]):
+            pull_request = {"state": "open", "base": {"sha": "base-sha"},
+                            "changed_files": 1, "labels": labels}
+            contents = {"type": "file", "encoding": "base64",
+                        "content": base64.b64encode(b"/src/ @writer").decode()}
+            empty = {"type": "file", "encoding": "base64", "content": ""}
+            for responses in ([empty, [[{"filename": "README.md"}]]],
+                              [contents, [[{"filename": "README.md"}]]]):
+                with self.subTest(labels=labels, responses=responses), patch.object(
+                    labeler, "github_api", side_effect=[pull_request, *responses]
+                ) as api:
+                    labeler.synchronize_label("example/repo", "42")
+                    self.assertFalse(any("/reviews?" in c.args[0] for c in api.call_args_list))
+                    self.assertFalse(any("method" in c.kwargs for c in api.call_args_list))
+
+    def test_incomplete_file_listing_fails(self) -> None:
+        owners = [(labeler.compile_codeowners_pattern("*"), True)]
+        pull_request = {"base": {"sha": "base"}, "changed_files": 3001}
+        with patch.object(labeler, "load_codeowners", return_value=owners), \
+                patch.object(labeler, "github_api", return_value=[[{"filename": "src/a"}]]):
+            with self.assertRaisesRegex(ValueError, "incomplete"):
+                labeler.requires_prod_approval(
+                    "repos/example/repo", "42", pull_request
+                )
+
+    def test_only_explicit_404_is_treated_as_absent(self) -> None:
+        for status in ("404", "403", "500", "not-json"):
+            error = subprocess.CalledProcessError(
+                1, ["gh", "api"], output=json.dumps({"status": status})
+            )
+            with self.subTest(status=status), patch.object(
+                labeler.subprocess, "run", side_effect=error
+            ):
+                if status == "404":
+                    self.assertIsNone(labeler.github_api("contents", allow_not_found=True))
+                else:
+                    with self.assertRaises(subprocess.CalledProcessError):
+                        labeler.github_api("contents", allow_not_found=True)
+
     def test_messages_use_stderr(self) -> None:
         with patch("sys.stderr", new_callable=io.StringIO) as stderr, patch(
             "sys.stdout", new_callable=io.StringIO
@@ -63,7 +220,8 @@ class ReviewLabelTests(unittest.TestCase):
     def test_deleted_reviewer_is_ignored(self) -> None:
         self.assertEqual(labeler.current_approvers([{"user": None, "state": "APPROVED"}]), [])
 
-    def test_reconciliation(self) -> None:
+    @patch.object(labeler, "requires_prod_approval", return_value=True)
+    def test_reconciliation(self, gate: object) -> None:
         approval = review(1, "APPROVED")
         cases = [
             ("writer", [[approval]], False, "write", "POST"),
@@ -121,7 +279,8 @@ class ReviewLabelTests(unittest.TestCase):
             labeler.synchronize_label("example/repo", "42")
             api.assert_called_once_with("repos/example/repo/pulls/42")
 
-    def test_api_errors_do_not_mutate_labels(self) -> None:
+    @patch.object(labeler, "requires_prod_approval", return_value=True)
+    def test_api_errors_do_not_mutate_labels(self, gate: object) -> None:
         environment = {"GH_TOKEN": "test-token", "GH_REPO": "example/repo", "PR_NUMBER": "42"}
         for failed_request in ("reviews", "permission"):
             responses = [{"state": "open", "labels": [{"name": labeler.LABEL}]}]
