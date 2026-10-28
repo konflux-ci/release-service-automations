@@ -145,7 +145,8 @@ docs/* @writer
                 ])
 
     def test_nonmatching_pr_leaves_labels_and_reviews_untouched(self) -> None:
-        for labels in ([], [{"name": labeler.LABEL}]):
+        for labels in ([], [{"name": labeler.LABEL}], [{"name": labeler.APPROVED_LABEL}],
+                       [{"name": labeler.LABEL}, {"name": labeler.APPROVED_LABEL}]):
             pull_request = {"state": "open", "base": {"sha": "base-sha"},
                             "changed_files": 1, "labels": labels}
             contents = {"type": "file", "encoding": "base64",
@@ -273,6 +274,43 @@ docs/* @writer
                         method="DELETE",
                     )]
                 self.assertEqual(mutations, expected)
+
+    @patch.object(labeler, "requires_prod_approval", return_value=True)
+    def test_prod_labels_after_dismissal(self, gate: object) -> None:
+        for has_other_approval in (False, True):
+            for labels in ([], [labeler.APPROVED_LABEL],
+                           [labeler.LABEL, labeler.APPROVED_LABEL]):
+                existing_labels = [*labels, "unrelated"]
+                reviews = [review(1, "DISMISSED")]
+                if has_other_approval:
+                    reviews.append(review(2, "APPROVED", "other"))
+
+                def response(endpoint: str, **options: object) -> dict | list | None:
+                    if options.get("method"):
+                        return None
+                    if "/reviews?" in endpoint:
+                        return [reviews]
+                    if endpoint.endswith("/permission"):
+                        return {"permission": "write"}
+                    return {"state": "open", "labels": [
+                        {"name": label} for label in existing_labels
+                    ]}
+
+                with self.subTest(labels=labels, other_approval=has_other_approval), \
+                        patch.object(labeler, "github_api", side_effect=response) as api:
+                    labeler.synchronize_label("example/repo", "42")
+                    mutations = [c for c in api.call_args_list if "method" in c.kwargs]
+                    if has_other_approval:
+                        expected = [] if labeler.LABEL in labels else [call(
+                            "repos/example/repo/issues/42/labels", method="POST",
+                            payload={"labels": [labeler.LABEL]},
+                        )]
+                    else:
+                        expected = [call(
+                            f"repos/example/repo/issues/42/labels/{label.replace('/', '%2F')}",
+                            method="DELETE",
+                        ) for label in labels]
+                    self.assertEqual(mutations, expected)
 
     def test_closed_pr(self) -> None:
         with patch.object(labeler, "github_api", return_value={"state": "closed"}) as api:

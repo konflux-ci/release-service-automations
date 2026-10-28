@@ -1,10 +1,11 @@
 # PR Prod Approval Labeler GitHub Action
 
 Adds `prod/needs-approval` when an open PR has a current approval from someone
-with write, maintain, or admin access. Removes the label when no qualifying
-approval remains. When root CODEOWNERS exists, only PRs touching its owned paths
+with write, maintain, or admin access. Removes both `prod/needs-approval` and
+`prod/approved`, if present, when no qualifying approval remains. When root CODEOWNERS exists, only PRs touching its owned paths
 are eligible for label updates. Comment-only reviews do not revoke approvals, and dismissing
-one approval leaves the label in place if another qualifying approval remains.
+one approval leaves both labels in place if another qualifying approval remains.
+The action never adds `prod/approved`.
 
 ## CODEOWNERS filter
 
@@ -22,10 +23,11 @@ to PRs changing files under the root `src/` directory. Changed paths include rem
 files and both names of renamed files.
 
 If root CODEOWNERS is absent, the action adds `prod/needs-approval` when an open
-PR has a qualifying approval and removes it when no qualifying approval remains.
+PR has a qualifying approval and removes both `prod/needs-approval` and
+`prod/approved`, if present, when no qualifying approval remains.
 If root CODEOWNERS exists but no changed paths are owned
 (including an empty CODEOWNERS file), it skips review checks and leaves all labels
-untouched, including an existing `prod/needs-approval`.
+untouched, including existing `prod/needs-approval` and `prod/approved` labels.
 API failures and incomplete changed-file listings fail the action without updating
 labels. This includes PRs exceeding GitHub's 3,000-file API limit.
 

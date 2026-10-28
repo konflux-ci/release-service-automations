@@ -11,6 +11,7 @@ import sys
 from urllib.parse import quote
 
 LABEL = "prod/needs-approval"
+APPROVED_LABEL = "prod/approved"
 DECISIVE_STATES = {"APPROVED", "CHANGES_REQUESTED", "DISMISSED"}
 WRITE_PERMISSIONS = {"write", "admin"}
 
@@ -193,14 +194,16 @@ def synchronize_label(repository: str, pr_number: str) -> None:
             has_approval = True
             break
 
-    has_label = any(label["name"] == LABEL for label in pull_request["labels"])
+    current_labels = {label["name"] for label in pull_request["labels"]}
+    labels_to_remove = [label for label in (LABEL, APPROVED_LABEL) if label in current_labels]
     labels_endpoint = f"{repository_endpoint}/issues/{pr_number}/labels"
-    if has_approval and not has_label:
+    if has_approval and LABEL not in current_labels:
         github_api(labels_endpoint, method="POST", payload={"labels": [LABEL]})
         _info(f"Added {LABEL} to PR #{pr_number}")
-    elif not has_approval and has_label:
-        github_api(f"{labels_endpoint}/{quote(LABEL, safe='')}", method="DELETE")
-        _info(f"Removed {LABEL} from PR #{pr_number}")
+    elif not has_approval and labels_to_remove:
+        for label in labels_to_remove:
+            github_api(f"{labels_endpoint}/{quote(label, safe='')}", method="DELETE")
+            _info(f"Removed {label} from PR #{pr_number}")
     else:
         _info(f"Label already matches approvals for PR #{pr_number}")
 
