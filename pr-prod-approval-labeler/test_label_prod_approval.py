@@ -301,7 +301,9 @@ docs/* @writer
                     labeler.synchronize_label("example/repo", "42")
                     mutations = [c for c in api.call_args_list if "method" in c.kwargs]
                     if has_other_approval:
-                        expected = [] if labeler.LABEL in labels else [call(
+                        expected = [] if (
+                            labeler.LABEL in labels or labeler.APPROVED_LABEL in labels
+                        ) else [call(
                             "repos/example/repo/issues/42/labels", method="POST",
                             payload={"labels": [labeler.LABEL]},
                         )]

@@ -197,7 +197,7 @@ def synchronize_label(repository: str, pr_number: str) -> None:
     current_labels = {label["name"] for label in pull_request["labels"]}
     labels_to_remove = [label for label in (LABEL, APPROVED_LABEL) if label in current_labels]
     labels_endpoint = f"{repository_endpoint}/issues/{pr_number}/labels"
-    if has_approval and LABEL not in current_labels:
+    if has_approval and LABEL not in current_labels and APPROVED_LABEL not in current_labels:
         github_api(labels_endpoint, method="POST", payload={"labels": [LABEL]})
         _info(f"Added {LABEL} to PR #{pr_number}")
     elif not has_approval and labels_to_remove:
