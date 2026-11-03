@@ -1,5 +1,5 @@
 name: "PR Prod Approval Labeler"
-description: "Synchronizes prod/needs-approval with current approvals from repository writers."
+description: "Synchronizes prod/needs-approval with current approvals unless prod/approved exists."
 
 inputs:
   pr-number:

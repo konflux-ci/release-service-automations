@@ -1,7 +1,7 @@
 # PR Prod Approval Labeler GitHub Action
 
 Adds `prod/needs-approval` when an open PR has a current approval from someone
-with write, maintain, or admin access. Removes both `prod/needs-approval` and
+with write, maintain, or admin access, unless `prod/approved` is already present. Removes both `prod/needs-approval` and
 `prod/approved`, if present, when no qualifying approval remains. When root CODEOWNERS exists, only PRs touching its owned paths
 are eligible for label updates. Comment-only reviews do not revoke approvals, and dismissing
 one approval leaves both labels in place if another qualifying approval remains.
@@ -23,7 +23,7 @@ to PRs changing files under the root `src/` directory. Changed paths include rem
 files and both names of renamed files.
 
 If root CODEOWNERS is absent, the action adds `prod/needs-approval` when an open
-PR has a qualifying approval and removes both `prod/needs-approval` and
+PR has a qualifying approval and does not already have `prod/approved`, and removes both `prod/needs-approval` and
 `prod/approved`, if present, when no qualifying approval remains.
 If root CODEOWNERS exists but no changed paths are owned
 (including an empty CODEOWNERS file), it skips review checks and leaves all labels
