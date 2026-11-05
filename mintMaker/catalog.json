@@ -9,7 +9,8 @@
       ".tekton/**",
       "integration-tests/**",
       "tasks/**",
-      "pipelines/**"
+      "pipelines/**",
+      "stepactions/**"
     ],
     "packageRules": [
       {
@@ -19,7 +20,7 @@
       {
         "matchPackageNames": [
           "quay.io/konflux-ci/release-service-utils",
-          "quay.io/conforma/cli"
+          "quay.io/konflux-ci/build-trusted-artifacts"
         ],
         "enabled": true
       }
