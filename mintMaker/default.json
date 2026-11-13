@@ -1,6 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "base: rebaseWhen, tekton schedule, GitHub Actions and automerge",
+  "description": "base: rebaseWhen, tekton schedule, GitHub Actions and automerge, tekton and kubernetes matchPackageNames allowlists",
   "rebaseWhen": "behind-base-branch",
   "packageRules": [
     {
@@ -10,7 +10,33 @@
     }
   ],
   "tekton": {
-    "schedule": ["* 0-4 * * *"]
+    "schedule": ["* 0-4 * * *"],
+    "managerFilePatterns": ["/\\.yaml$/", "/\\.yml$/"],
+    "includePaths": ["**"],
+    "packageRules": [
+      {
+        "description": "Outside .tekton/, only allow the listed matchPackageNames",
+        "matchFileNames": ["!.tekton/**"],
+        "matchPackageNames": [
+          "!quay.io/konflux-ci/release-service-utils",
+          "!quay.io/konflux-ci/build-trusted-artifacts"
+        ],
+        "enabled": false
+      }
+    ]
+  },
+  "kubernetes": {
+    "schedule": ["* 0-4 * * *"],
+    "managerFilePatterns": ["/\\.yaml$/", "/\\.yml$/"],
+    "packageRules": [
+      {
+        "description": "Only allow the listed matchPackageNames in kubernetes manifests",
+        "matchPackageNames": [
+          "!quay.io/konflux-ci/release-service-utils"
+        ],
+        "enabled": false
+      }
+    ]
   },
   "github-actions": {
     "enabled": true,

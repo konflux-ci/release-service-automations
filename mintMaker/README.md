@@ -5,11 +5,10 @@ used by [MintMaker](https://github.com/konflux-ci/mintmaker).
 
 ## Presets
 
-| Preset  | File           | What it adds                                                                                            |
-|---------|----------------|-----------------------------------------------------------------------------------------------------------|
-| default | `default.json` | `rebaseWhen`, tekton schedule, GitHub Actions with `pinDigests`, and automerge for minor/patch updates |
-| utils   | `utils.json`   | Extends default, weekly lock file maintenance and pep621 pinned deps                                      |
-| catalog | `catalog.json` | Extends default, custom tekton paths and image filtering                                                  |
+| Preset  | File           | What it adds                                                                                                                                                                      |
+|---------|----------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| default | `default.json` | `rebaseWhen`, tekton schedule, GitHub Actions with `pinDigests`, automerge for minor/patch updates, tekton and kubernetes matchPackageNames allowlists |
+| utils   | `utils.json`   | Extends default, weekly lock file maintenance and pep621 pinned deps                                                                                                              |
 
 ## Usage
 
@@ -22,12 +21,12 @@ Base only:
 }
 ```
 
-Base and catalog specific tekton paths and image filtering:
+Base and utils, adding lock file maintenance and pep621 pinned deps:
 
 ```
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>konflux-ci/release-service-automations//mintMaker/catalog"]
+  "extends": ["github>konflux-ci/release-service-automations//mintMaker/utils"]
 }
 ```
 
